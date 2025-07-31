@@ -65,24 +65,49 @@ socket.on('updatePlayerList', (players, hostId) => { state.players = players; st
 socket.on('kicked', () => { alert("Bạn đã bị chủ phòng kick!"); showScreen('home'); });
 socket.on('gameStarted', () => { showScreen('game'); gameElements.messageArea.innerHTML = ''; });
 
-// [NÂNG CẤP] Thêm đồng hồ đếm ngược cho Giai đoạn 1
+// THAY THẾ BẰNG TOÀN BỘ HÀM NÀY
 socket.on('newRound', data => {
-    state.gamePhase = 'choice'; state.players = data.players; gameElements.roundIndicator.textContent = data.roundNumber;
+    state.gamePhase = 'choice';
+    state.players = data.players;
+    gameElements.roundIndicator.textContent = data.roundNumber;
     gameElements.phaseTitle.textContent = 'Bước 1: Lựa Chọn Bí Mật';
-    gameElements.decreeDisplay.style.display = 'none'; gameElements.chaosControls.style.display = 'none';
-    clearInterval(state.countdownTimer); renderPlayerCards();
-    
-    let choiceTimerHTML = `<div id="timer-display">${data.duration}</div>`;
-    gameElements.phaseTitle.insertAdjacentHTML('afterend', choiceTimerHTML);
+    gameElements.decreeDisplay.style.display = 'none';
+    gameElements.chaosControls.style.display = 'none'; // Đảm bảo các nút hỗn loạn được ẩn đi
+    clearInterval(state.countdownTimer);
+    renderPlayerCards();
 
-    gameElements.choiceButtons.innerHTML = `<button class="choice-buttons loyal" onclick="sendPlayerChoice('Cống Hiến')">Cống Hiến</button><button class="choice-buttons corrupt" onclick="sendPlayerChoice('Tham Nhũng')">Tham Nhũng</button><button class="choice-buttons blank" onclick="sendPlayerChoice('Phiếu Trống')">Phiếu Trống</button>`;
+    // [SỬA LỖI Ở ĐÂY] - Xóa đồng hồ cũ trước khi tạo cái mới
+    const existingTimer = document.getElementById('timer-display');
+    if (existingTimer) {
+        existingTimer.remove();
+    }
+
+    // [SỬA LỖI Ở ĐÂY] - Tạo HTML cho cả đồng hồ và các nút
+    let phaseHTML = `
+        <div id="timer-display">${data.duration}</div>
+        <div id="player-choice-buttons">
+            <button class="choice-buttons loyal" onclick="sendPlayerChoice('Cống Hiến')">Cống Hiến</button>
+            <button class="choice-buttons corrupt" onclick="sendPlayerChoice('Tham Nhũng')">Tham Nhũng</button>
+            <button class="choice-buttons blank" onclick="sendPlayerChoice('Phiếu Trống')">Phiếu Trống</button>
+        </div>
+    `;
+    
+    // Đặt HTML vào đúng vùng điều khiển
+    gameElements.choiceButtons.innerHTML = phaseHTML;
+
     logMessage('info', `--- Vòng ${data.roundNumber} bắt đầu! Hãy đưa ra lựa chọn của bạn. ---`);
 
+    // Bắt đầu đồng hồ đếm ngược
     let t = data.duration;
     state.countdownTimer = setInterval(() => {
-        t--; const timerEl = document.getElementById('timer-display');
-        if (timerEl) timerEl.textContent = t >= 0 ? t : 0;
-        if (t < 0) clearInterval(state.countdownTimer);
+        t--;
+        const timerEl = document.getElementById('timer-display');
+        if (timerEl) {
+            timerEl.textContent = t >= 0 ? t : 0;
+        }
+        if (t < 0) {
+            clearInterval(state.countdownTimer);
+        }
     }, 1000);
 });
 
