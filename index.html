@@ -1,1 +1,69 @@
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quyền Lực Bóng Tối - Multiplayer</title><link rel="stylesheet" href="/style.css"></head><body><div class="container"><div id="home-screen"><h1>Quyền Lực Bóng Tối</h1><div class="menu"><input type="text" id="player-name-input" placeholder="NHẬP TÊN CỦA BẠN..." maxlength="15"><button id="create-room-btn">Tạo phòng mới</button><hr><input type="text" id="room-code-input" placeholder="NHẬP MÃ PHÒNG..." maxlength="4"><button id="join-room-btn">Tham gia phòng</button></div></div><div id="room-screen" style="display: none;"><h2>Phòng: <span id="room-code-display"></span></h2><h3>Người chơi trong phòng:</h3><ul id="player-list"></ul><div id="host-controls" class="controls-wrapper" style="display: none;"><button id="add-bot-btn">Thêm Bot</button><button id="start-game-btn" disabled>Bắt đầu trò chơi</button></div></div><div id="game-screen" style="display: none;"><p class="round-indicator">Vòng: <span id="current-round">1</span></p><div id="decree-display" style="display: none;"><h3>📜 Sắc Lệnh Hoàng Gia 📜</h3><p id="decree-title" class="warning"></p><p id="decree-description"></p></div><div id="players-container"></div><div id="round-phase"><h2 id="phase-title"></h2><div id="chaos-phase-controls" style="display: none;"></div><div id="player-choice-buttons"></div></div><div id="message-area"><p class="info">Chào mừng đến với Quyền Lực Bóng Tối!</p></div></div></div><script src="/socket.io/socket.io.js"></script><script src="/client.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quyền Lực Bóng Tối - Multiplayer</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- ======================= MÀN HÌNH CHÍNH ======================= -->
+        <div id="home-screen">
+            <h1>Quyền Lực Bóng Tối</h1>
+            <div class="menu">
+                <input type="text" id="player-name-input" placeholder="NHẬP TÊN CỦA BẠN..." maxlength="15">
+                <button id="create-room-btn">Tạo phòng mới</button>
+                <hr>
+                <input type="text" id="room-code-input" placeholder="NHẬP MÃ PHÒNG..." maxlength="4">
+                <button id="join-room-btn">Tham gia phòng</button>
+            </div>
+        </div>
+
+        <!-- ======================= MÀN HÌNH PHÒNG CHỜ ======================= -->
+        <div id="room-screen" style="display: none;">
+            <h2>Phòng: <span id="room-code-display"></span></h2>
+            <h3>Người chơi trong phòng:</h3>
+            <ul id="player-list"></ul>
+            <div id="host-controls" class="controls-wrapper" style="display: none;">
+                <button id="add-bot-btn">Thêm Bot</button>
+                <button id="start-game-btn" disabled>Bắt đầu trò chơi</button>
+            </div>
+        </div>
+
+        <!-- ======================= KHU VỰC CHƠI GAME ======================= -->
+        <div id="game-screen" style="display: none;">
+            <p class="round-indicator">Vòng: <span id="current-round">1</span></p>
+            
+            <!-- Vùng hiển thị Sắc Lệnh Hoàng Gia -->
+            <div id="decree-display" style="display: none;">
+                <h3>📜 Sắc Lệnh Hoàng Gia 📜</h3>
+                <p id="decree-title" class="warning"></p>
+                <p id="decree-description"></p>
+            </div>
+
+            <!-- Vùng chứa các thẻ thông tin người chơi -->
+            <div id="players-container"></div>
+
+            <!-- Vùng chứa các pha hành động của vòng đấu -->
+            <div id="round-phase">
+                 <h2 id="phase-title"></h2>
+                 
+                 <!-- [SỬA LỖI] Gộp thành một vùng điều khiển duy nhất -->
+                 <div id="action-controls">
+                    <!-- Javascript sẽ điền nội dung vào đây -->
+                 </div>
+            </div>
+
+            <!-- Vùng hiển thị log/thông báo của vòng đấu -->
+            <div id="message-area">
+                <p class="info">Chào mừng đến với Quyền Lực Bóng Tối!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tải các script cần thiết -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/client.js"></script>
+</body>
+</html>
