@@ -1,5 +1,5 @@
 //======================================================================
-// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (PHIÊN BẢN HOÀN CHỈNH CUỐI CÙNG)
+// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (TƯƠNG THÍCH HOÀN TOÀN VỚI HOSTING)
 //======================================================================
 
 const express = require('express');
@@ -12,13 +12,18 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // [SỬA LỖI QUAN TRỌNG]
-// Dòng này chỉ cho Express biết rằng tất cả các file tĩnh (HTML, CSS, JS, Âm thanh)
+// BƯỚC 1: Chỉ cho Express biết rằng tất cả các file tĩnh (CSS, JS, Âm thanh)
 // đều nằm trong thư mục 'public'.
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Route này không cần nữa vì express.static đã xử lý việc phục vụ index.html
-// app.get('/', (req, res) => { ... });
+// BƯỚC 2: Chỉ cho Express biết file nào là trang chủ để hiển thị.
+// Khi có ai đó truy cập vào trang gốc (ví dụ: ...onrender.com/),
+// server sẽ gửi lại file index.html trong thư mục public.
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
+// Biến toàn cục để lưu trữ trạng thái các phòng chơi
 const rooms = {};
 
 // ... TOÀN BỘ LOGIC GAME VÀ SẮC LỆNH CỦA BẠN NẰM Ở ĐÂY ...
@@ -41,5 +46,9 @@ function triggerBotChoices(roomCode) { rooms[roomCode]?.gameState?.players.forEa
 function triggerBotChaosAction(roomCode) { const gs = rooms[roomCode]?.gameState; if (!gs) return; const bots = gs.players.filter(p => p.isBot && !p.isDefeated); const targets = gs.players.filter(p => !p.isDefeated); if (bots.length === 0 || targets.length < 2) return; bots.forEach(bot => { setTimeout(() => { if (gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return; const candidates = targets.filter(p => p.id !== bot.id); if (candidates.length === 0) return; const target = candidates[Math.floor(Math.random() * candidates.length)]; const actionProbability = bot.personality === 'aggressive' ? 0.6 : (bot.personality === 'cautious' ? 0.3 : 0.4); if (Math.random() < actionProbability) { const actionType = (bot.personality === 'cautious' && Math.random() < 0.8) ? 'teamup' : 'challenge'; if (actionType === 'challenge') { const guess = ['Cống Hiến', 'Tham Nhũng', 'Phiếu Trống'][Math.floor(Math.random() * 3)]; handleChaosAction(roomCode, bot.id, target.id, 'challenge', guess); } else { handleChaosAction(roomCode, bot.id, target.id, 'teamup'); } } else if (Math.random() < 0.5) { socket.emit('playerVotedToSkip', roomCode, bot.id); } }, Math.random() * 10000 + 5000); }); }
 io.on('connection', (socket) => { socket.on('createRoom', data => { let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (rooms[code]); rooms[code] = { players: [], hostId: socket.id, maxPlayers: 12, gameState: null }; handleJoinRoom(code, data.name); }); socket.on('joinRoom', data => handleJoinRoom(data.roomCode?.trim().toUpperCase(), data.name)); function handleJoinRoom(code, name) { const room = rooms[code]; if (!room) return socket.emit('roomError', `Phòng '${code}' không tồn tại!`); if (room.gameState) return socket.emit('roomError', 'Trò chơi đã bắt đầu!'); if (room.players.length >= room.maxPlayers) return socket.emit('roomError', 'Phòng đã đầy!'); const p = { id: socket.id, name: (name || `Người chơi ${room.players.length + 1}`).substring(0, 15).trim(), isBot: false }; room.players.push(p); socket.join(code); io.to(code).emit('updatePlayerList', room.players, room.hostId); socket.emit('joinedRoom', { roomCode: code, hostId: room.hostId, myId: socket.id, players: room.players }); } socket.on('addBot', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length < r.maxPlayers) { const personalities = ['aggressive', 'cautious', 'random']; const p = { id: `bot-${Date.now()}`, name: `Bot ${r.players.length + 1}`, isBot: true, personality: personalities[Math.floor(Math.random() * personalities.length)] }; r.players.push(p); io.to(code).emit('updatePlayerList', r.players, r.hostId); } }); socket.on('kickPlayer', (data) => { const room = rooms[data.roomCode]; if (room && socket.id === room.hostId) { const targetSocket = io.sockets.sockets.get(data.playerId); if (targetSocket) { targetSocket.emit('kicked'); targetSocket.leave(data.roomCode); } room.players = room.players.filter(p => p.id !== data.playerId); io.to(data.roomCode).emit('updatePlayerList', room.players, room.hostId); } }); socket.on('changeName', data => { const p = rooms[data.roomCode]?.players.find(p => p.id === socket.id); if (p) { p.name = data.newName.substring(0, 15).trim() || p.name; io.to(data.roomCode).emit('updatePlayerList', rooms[data.roomCode].players, rooms[data.roomCode].hostId); } }); socket.on('startGame', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length >= 2) { r.gameState = createGameState(r.players); io.to(code).emit('gameStarted'); startNewRound(code); } }); socket.on('playerChoice', data => handlePlayerChoice(data.roomCode, socket.id, data.choice)); socket.on('requestChaosAction', data => handleChaosAction(data.roomCode, socket.id, data.targetId, data.actionType, data.guess)); socket.on('playerVotedToSkip', (roomCode, botId = null) => { const gs = rooms[roomCode]?.gameState; if (!gs || gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return; const voterId = botId || socket.id; gs.roundData.votesToSkip.add(voterId); const totalPlayers = gs.players.filter(p => !p.disconnected).length; io.to(roomCode).emit('updateSkipVoteCount', gs.roundData.votesToSkip.size, totalPlayers); if (gs.roundData.votesToSkip.size >= totalPlayers) { endChaosPhase(roomCode, "Tất cả người chơi đã đồng ý bỏ qua giai đoạn này."); } }); socket.on('amnesiaAction', data => { const gs = rooms[data.roomCode]?.gameState; if (!gs || gs.phase !== 'special_action') return; const p1 = gs.players.find(p => p.id === data.player1Id), p2 = gs.players.find(p => p.id === data.player2Id); if (p1 && p2) { [p1.chosenAction, p2.chosenAction] = [p2.chosenAction, p1.chosenAction]; io.to(data.roomCode).emit('logMessage', { type: 'warning', message: `🧠 Lựa chọn của **${p1.name}** và **${p2.name}** đã bị hoán đổi!` }); } startChaosPhase(data.roomCode); }); socket.on('nextRound', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.gameState.phase !== 'gameover') startNewRound(code); }); socket.on('playAgain', (roomCode) => { const room = rooms[roomCode]; if (room && socket.id === room.hostId && room.gameState.phase === 'gameover') { room.gameState = createGameState(room.players); io.to(roomCode).emit('gameStarted'); startNewRound(roomCode); } }); socket.on('disconnect', () => { for (const code in rooms) { const r = rooms[code]; const i = r.players.findIndex(p => p.id === socket.id); if (i !== -1) { if (r.gameState) { const p = r.gameState.players.find(p => p.id === socket.id); if (p) { p.disconnected = true; p.name = `${p.name} (Rời trận)`; io.to(code).emit('playerDisconnected', { playerId: socket.id, newName: p.name }); } } else r.players.splice(i, 1); if (r.players.filter(p => !p.isBot).length === 0) { delete rooms[code]; break; } if (socket.id === r.hostId && r.players.length > 0) { r.hostId = (r.players.find(p => !p.isBot) || r.players[0]).id; } io.to(code).emit('updatePlayerList', r.players, r.hostId); break; } } }); });
 
+
+// Khởi động server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`[SERVER] Máy chủ đang lắng nghe trên cổng ${PORT}`); });
+server.listen(PORT, () => {
+    console.log(`[SERVER] Máy chủ đang lắng nghe trên cổng ${PORT}`);
+});
