@@ -72,27 +72,25 @@ socket.on('newRound', data => {
     gameElements.roundIndicator.textContent = data.roundNumber;
     gameElements.phaseTitle.textContent = 'Bước 1: Lựa Chọn Bí Mật';
     gameElements.decreeDisplay.style.display = 'none';
-    gameElements.chaosControls.style.display = 'none'; // Đảm bảo các nút hỗn loạn được ẩn đi
+    
+    // Xóa bộ đếm giờ cũ và ẩn vùng hỗn loạn
     clearInterval(state.countdownTimer);
+    gameElements.chaosControls.innerHTML = '';
+    gameElements.chaosControls.style.display = 'none';
+    
     renderPlayerCards();
-
-    // [SỬA LỖI Ở ĐÂY] - Xóa đồng hồ cũ trước khi tạo cái mới
-    const existingTimer = document.getElementById('timer-display');
-    if (existingTimer) {
-        existingTimer.remove();
-    }
 
     // [SỬA LỖI Ở ĐÂY] - Tạo HTML cho cả đồng hồ và các nút
     let phaseHTML = `
         <div id="timer-display">${data.duration}</div>
-        <div id="player-choice-buttons">
+        <div id="player-choice-buttons-wrapper">
             <button class="choice-buttons loyal" onclick="sendPlayerChoice('Cống Hiến')">Cống Hiến</button>
             <button class="choice-buttons corrupt" onclick="sendPlayerChoice('Tham Nhũng')">Tham Nhũng</button>
             <button class="choice-buttons blank" onclick="sendPlayerChoice('Phiếu Trống')">Phiếu Trống</button>
         </div>
     `;
     
-    // Đặt HTML vào đúng vùng điều khiển
+    // Đặt HTML vào đúng vùng điều khiển, không phải chèn vào tiêu đề
     gameElements.choiceButtons.innerHTML = phaseHTML;
 
     logMessage('info', `--- Vòng ${data.roundNumber} bắt đầu! Hãy đưa ra lựa chọn của bạn. ---`);
