@@ -305,4 +305,15 @@ input[type="text"]::placeholder { color: var(--text-medium); text-transform: non
     button { padding: 10px 15px; font-size: 1em; }
     input[type="text"] { padding: 10px; font-size: 1em; }
     .player-selection-grid { grid-template-columns: 1fr 1fr; } /* Luôn 2 cột trên điện thoại nhỏ */
+
+.kick-btn {
+    background-color: var(--danger-red);
+    color: white;
+    padding: 5px 10px;
+    font-size: 0.8em;
+    margin-left: 15px;
+}
+#player-list li > div {
+    display: flex;
+    align-items: center;
 }
