@@ -1,16 +1,14 @@
 //======================================================================
-// QUYỀN LỰC BÓNG TỐI - CLIENT LOGIC (FIX LỖI KHÔNG TƯƠNG TÁC)
+// QUYỀN LỰC BÓNG TỐI - CLIENT LOGIC (FIX LỖI HIỂN THỊ PHÒNG CHỜ)
 //======================================================================
 
 const socket = io();
 
 // --- I. DOM Elements ---
 const screens = { home: document.getElementById('home-screen'), room: document.getElementById('room-screen'), game: document.getElementById('game-screen') };
-// [SỬA LỖI] Cập nhật lại các DOM Elements
 const homeElements = { createRoomBtn: document.getElementById('create-room-btn'), joinRoomBtn: document.getElementById('join-room-btn'), roomCodeInput: document.getElementById('room-code-input'), nameInput: document.getElementById('player-name-input') };
 const roomElements = { roomCodeDisplay: document.getElementById('room-code-display'), playerList: document.getElementById('player-list'), hostControls: document.getElementById('host-controls'), addBotBtn: document.getElementById('add-bot-btn'), startGameBtn: document.getElementById('start-game-btn') };
-const gameElements = { roundIndicator: document.getElementById('current-round'), decreeDisplay: document.getElementById('decree-display'), decreeTitle: document.getElementById('decree-title'), decreeDescription: document.getElementById('decree-description'), playersContainer: document.getElementById('players-container'), phaseTitle: document.getElementById('phase-title'), actionControls: document.getElementById('action-controls'), // Đổi thành action-controls
-    messageArea: document.getElementById('message-area') };
+const gameElements = { roundIndicator: document.getElementById('current-round'), decreeDisplay: document.getElementById('decree-display'), decreeTitle: document.getElementById('decree-title'), decreeDescription: document.getElementById('decree-description'), playersContainer: document.getElementById('players-container'), phaseTitle: document.getElementById('phase-title'), actionControls: document.getElementById('action-controls'), messageArea: document.getElementById('message-area') };
 
 // --- II. Client State ---
 let state = { myId: null, currentRoomCode: null, currentHostId: null, players: [], gamePhase: null, countdownTimer: null };
@@ -23,7 +21,26 @@ function closeModal() { const e = document.querySelector('.modal-overlay'); if (
 function getChoiceClass(choice) { switch (choice) { case 'Cống Hiến': return 'loyal-text'; case 'Tham Nhũng': return 'corrupt-text'; case 'Phiếu Trống': return 'blank-text'; default: return 'info'; } }
 
 // --- IV. Render Functions ---
-function renderPlayerList() { roomElements.playerList.innerHTML = ''; state.players.forEach(p => { const li = document.createElement('li'); let text = `<span>${p.name}</span>`; if (p.id === state.myId) text += ' <em>(Bạn)</em>'; if (p.id === state.currentHostId) text += ' <strong class="host-tag">[Host]</strong>'; if (p.disconnected) text += ' <span class="disconnected-tag">(Mất kết nối)</span>'; if (isHost && p.id !== state.myId) { text += `<button class="kick-btn" onclick="kickPlayer('${p.id}')">Kick</button>`; } li.innerHTML = text; if (p.isBot) li.classList.add('bot'); roomElements.playerList.appendChild(li); }); const isHost = state.myId === state.currentHostId; roomElements.hostControls.style.display = isHost ? 'block' : 'none'; if (roomElements.startGameBtn) { roomElements.startGameBtn.disabled = state.players.length < 2; } }
+function renderPlayerList() {
+    roomElements.playerList.innerHTML = '';
+    const isHost = state.myId === state.currentHostId;
+    state.players.forEach(p => {
+        const li = document.createElement('li');
+        let text = `<span>${p.name}</span>`;
+        let controls = '';
+        if (p.id === state.myId) text += ' <em>(Bạn)</em>';
+        if (p.id === state.currentHostId) text += ' <strong class="host-tag">[Host]</strong>';
+        if (p.disconnected) text += ' <span class="disconnected-tag">(Mất kết nối)</span>';
+        if (isHost && p.id !== state.myId) {
+            controls = `<button class="kick-btn" onclick="kickPlayer('${p.id}')">Kick</button>`;
+        }
+        li.innerHTML = `<div>${text}</div><div>${controls}</div>`;
+        if (p.isBot) li.classList.add('bot');
+        roomElements.playerList.appendChild(li);
+    });
+    roomElements.hostControls.style.display = isHost ? 'block' : 'none';
+    if (roomElements.startGameBtn) { roomElements.startGameBtn.disabled = state.players.length < 2; }
+}
 function renderPlayerCards() { gameElements.playersContainer.innerHTML = ''; state.players.forEach(player => { const card = document.createElement('div'); card.className = 'player-card'; card.id = `player-card-${player.id}`; card.innerHTML = `<h3>${player.name}</h3><p>Điểm: <span class="player-score">${player.score}</span></p><div class="chosen-action-wrapper"><p class="chosen-action info">Đang chọn...</p></div>`; if (player.disconnected) card.classList.add('disconnected'); gameElements.playersContainer.appendChild(card); }); }
 
 // --- V. EVENT LISTENERS ---
@@ -35,42 +52,21 @@ roomElements.startGameBtn.addEventListener('click', () => socket.emit('startGame
 // --- VI. SOCKET.IO EVENT HANDLERS ---
 socket.on('connect', () => { state.myId = socket.id; console.log('✅ Đã kết nối tới server với ID:', state.myId); showScreen('home'); });
 socket.on('roomError', msg => alert(`Lỗi: ${msg}`));
-socket.on('joinedRoom', data => { state.currentRoomCode = data.roomCode; state.currentHostId = data.hostId; state.players = data.players; roomElements.roomCodeDisplay.textContent = state.currentRoomCode; showScreen('room'); renderPlayerList(); });
+
+// [SỬA LỖI Ở ĐÂY] - Gọi renderPlayerList() sau khi vào phòng
+socket.on('joinedRoom', data => {
+    state.currentRoomCode = data.roomCode;
+    state.currentHostId = data.hostId;
+    state.players = data.players;
+    roomElements.roomCodeDisplay.textContent = state.currentRoomCode;
+    showScreen('room');
+    renderPlayerList(); // Đảm bảo danh sách được vẽ ngay lập tức
+});
+
 socket.on('updatePlayerList', (players, hostId) => { state.players = players; state.currentHostId = hostId; renderPlayerList(); });
 socket.on('kicked', () => { alert("Bạn đã bị chủ phòng kick!"); showScreen('home'); });
 socket.on('gameStarted', () => { showScreen('game'); gameElements.messageArea.innerHTML = ''; });
-
-// [SỬA LỖI] Viết lại hoàn toàn hàm này
-socket.on('newRound', data => {
-    state.gamePhase = 'choice';
-    state.players = data.players;
-    gameElements.roundIndicator.textContent = data.roundNumber;
-    gameElements.phaseTitle.textContent = 'Bước 1: Lựa Chọn Bí Mật';
-    gameElements.decreeDisplay.style.display = 'none';
-    clearInterval(state.countdownTimer);
-    renderPlayerCards();
-
-    let phaseHTML = `
-        <div id="timer-display">${data.duration}</div>
-        <div id="player-choice-buttons-wrapper">
-            <button class="choice-buttons loyal" onclick="sendPlayerChoice('Cống Hiến')">Cống Hiến</button>
-            <button class="choice-buttons corrupt" onclick="sendPlayerChoice('Tham Nhũng')">Tham Nhũng</button>
-            <button class="choice-buttons blank" onclick="sendPlayerChoice('Phiếu Trống')">Phiếu Trống</button>
-        </div>
-    `;
-    gameElements.actionControls.innerHTML = phaseHTML;
-
-    logMessage('info', `--- Vòng ${data.roundNumber} bắt đầu! Hãy đưa ra lựa chọn của bạn. ---`);
-
-    let t = data.duration;
-    state.countdownTimer = setInterval(() => {
-        t--;
-        const timerEl = document.getElementById('timer-display');
-        if (timerEl) timerEl.textContent = t >= 0 ? t : 0;
-        if (t < 0) clearInterval(state.countdownTimer);
-    }, 1000);
-});
-
+socket.on('newRound', data => { state.gamePhase = 'choice'; state.players = data.players; gameElements.roundIndicator.textContent = data.roundNumber; gameElements.phaseTitle.textContent = 'Bước 1: Lựa Chọn Bí Mật'; gameElements.decreeDisplay.style.display = 'none'; clearInterval(state.countdownTimer); renderPlayerCards(); let phaseHTML = `<div id="timer-display">${data.duration}</div><div id="player-choice-buttons-wrapper"><button class="choice-buttons loyal" onclick="sendPlayerChoice('Cống Hiến')">Cống Hiến</button><button class="choice-buttons corrupt" onclick="sendPlayerChoice('Tham Nhũng')">Tham Nhũng</button><button class="choice-buttons blank" onclick="sendPlayerChoice('Phiếu Trống')">Phiếu Trống</button></div>`; gameElements.actionControls.innerHTML = phaseHTML; logMessage('info', `--- Vòng ${data.roundNumber} bắt đầu! Hãy đưa ra lựa chọn của bạn. ---`); let t = data.duration; state.countdownTimer = setInterval(() => { t--; const timerEl = document.getElementById('timer-display'); if (timerEl) timerEl.textContent = t >= 0 ? t : 0; if (t < 0) clearInterval(state.countdownTimer); }, 1000); });
 socket.on('playerChose', playerId => { const card = document.getElementById(`player-card-${playerId}`); if (card) { const a = card.querySelector('.chosen-action'); a.textContent = '✅ Đã chọn!'; a.className = 'chosen-action info'; } });
 socket.on('decreeRevealed', data => { playSound('decree.mp3'); gameElements.decreeTitle.textContent = data.decree.name; gameElements.decreeDescription.textContent = data.decree.description; gameElements.decreeDisplay.style.display = 'block'; logMessage('warning', `📜 **${data.drawerName}** đã bốc được Sắc Lệnh: **${data.decree.name}**!`); });
 socket.on('chaosPhaseStarted', data => { state.gamePhase = 'chaos'; gameElements.phaseTitle.textContent = "Bước 2: Giai Đoạn Hỗn Loạn!"; const totalPlayers = state.players.filter(p => !p.disconnected).length; let h = `<div id="timer-display">${data.duration}</div><div class="chaos-actions"><button id="challenge-btn" onclick="showTargetSelection('challenge')">Thách Đấu</button><button id="teamup-btn" onclick="showTargetSelection('teamup')">Ghép Đội</button></div><button id="skip-chaos-btn" class="skip-button" onclick="voteToSkipChaos()">Bỏ Qua <span id="skip-vote-count">(0/${totalPlayers})</span></button>`; gameElements.actionControls.innerHTML = h; let t = data.duration; clearInterval(state.countdownTimer); state.countdownTimer = setInterval(() => { t--; const timerEl = document.getElementById('timer-display'); if (timerEl) timerEl.textContent = t >= 0 ? t : 0; if (t < 0) clearInterval(state.countdownTimer); }, 1000); });
