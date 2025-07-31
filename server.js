@@ -1,5 +1,5 @@
 //======================================================================
-// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (TƯƠNG THÍCH HOÀN TOÀN VỚI HOSTING)
+// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (FIX LỖI ĐƯỜNG DẪN TRÊN RENDER)
 //======================================================================
 
 const express = require('express');
@@ -11,16 +11,16 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// [SỬA LỖI QUAN TRỌNG]
-// BƯỚC 1: Chỉ cho Express biết rằng tất cả các file tĩnh (CSS, JS, Âm thanh)
-// đều nằm trong thư mục 'public'.
-app.use(express.static(path.join(__dirname, 'public')));
+// [SỬA LỖI HOSTING QUAN TRỌNG]
+// Dòng này yêu cầu Express phục vụ các file tĩnh (CSS, JS, Âm thanh)
+// ngay tại thư mục gốc của dự án trên Render.
+app.use(express.static(path.join(__dirname)));
 
-// BƯỚC 2: Chỉ cho Express biết file nào là trang chủ để hiển thị.
-// Khi có ai đó truy cập vào trang gốc (ví dụ: ...onrender.com/),
-// server sẽ gửi lại file index.html trong thư mục public.
+// [SỬA LỖI HOSTING QUAN TRỌNG]
+// Khi có ai đó truy cập trang chủ, server sẽ gửi lại file index.html
+// cũng nằm ở thư mục gốc.
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Biến toàn cục để lưu trữ trạng thái các phòng chơi
