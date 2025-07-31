@@ -1,5 +1,5 @@
 //======================================================================
-// QUYỀN LỰC BÓNG TỐI - CLIENT LOGIC (FIX LỖI HIỂN THỊ PHÒNG CHỜ)
+// QUYỀN LỰC BÓNG TỐI - CLIENT LOGIC (FIX LỖI THỨ TỰ HÀM)
 //======================================================================
 
 const socket = io();
@@ -14,11 +14,13 @@ const gameElements = { roundIndicator: document.getElementById('current-round'),
 let state = { myId: null, currentRoomCode: null, currentHostId: null, players: [], gamePhase: null, countdownTimer: null };
 
 // --- III. Helper Functions ---
+// [SỬA LỖI Ở ĐÂY] - Di chuyển toàn bộ khối này lên trên
 function showScreen(screenName) { Object.keys(screens).forEach(key => { screens[key].style.display = (key === screenName) ? 'block' : 'none'; }); }
 function logMessage(type, message) { const p = document.createElement('p'); p.className = type; p.innerHTML = message; gameElements.messageArea.prepend(p); }
 function createModal(title, contentHTML) { const e = document.querySelector('.modal-overlay'); if (e) e.remove(); const m = document.createElement('div'); m.className = 'modal-overlay'; const c = document.createElement('div'); c.className = 'modal-content'; c.innerHTML = `<h2>${title}</h2>${contentHTML}`; m.appendChild(c); document.body.appendChild(m); }
 function closeModal() { const e = document.querySelector('.modal-overlay'); if (e) e.remove(); }
 function getChoiceClass(choice) { switch (choice) { case 'Cống Hiến': return 'loyal-text'; case 'Tham Nhũng': return 'corrupt-text'; case 'Phiếu Trống': return 'blank-text'; default: return 'info'; } }
+function playSound(soundFile) { try { const audio = new Audio(`/${soundFile}`); audio.play(); } catch (error) { console.warn(`Không thể phát âm thanh: ${soundFile}`); } }
 
 // --- IV. Render Functions ---
 function renderPlayerList() {
@@ -52,17 +54,7 @@ roomElements.startGameBtn.addEventListener('click', () => socket.emit('startGame
 // --- VI. SOCKET.IO EVENT HANDLERS ---
 socket.on('connect', () => { state.myId = socket.id; console.log('✅ Đã kết nối tới server với ID:', state.myId); showScreen('home'); });
 socket.on('roomError', msg => alert(`Lỗi: ${msg}`));
-
-// [SỬA LỖI Ở ĐÂY] - Gọi renderPlayerList() sau khi vào phòng
-socket.on('joinedRoom', data => {
-    state.currentRoomCode = data.roomCode;
-    state.currentHostId = data.hostId;
-    state.players = data.players;
-    roomElements.roomCodeDisplay.textContent = state.currentRoomCode;
-    showScreen('room');
-    renderPlayerList(); // Đảm bảo danh sách được vẽ ngay lập tức
-});
-
+socket.on('joinedRoom', data => { state.currentRoomCode = data.roomCode; state.currentHostId = data.hostId; state.players = data.players; roomElements.roomCodeDisplay.textContent = state.currentRoomCode; showScreen('room'); renderPlayerList(); });
 socket.on('updatePlayerList', (players, hostId) => { state.players = players; state.currentHostId = hostId; renderPlayerList(); });
 socket.on('kicked', () => { alert("Bạn đã bị chủ phòng kick!"); showScreen('home'); });
 socket.on('gameStarted', () => { showScreen('game'); gameElements.messageArea.innerHTML = ''; });
@@ -81,6 +73,7 @@ socket.on('promptAmnesiaAction', data => { let c = '<h4>Chọn 2 người chơi 
 socket.on('playerDisconnected', data => { logMessage('error', `Người chơi ${data.newName} đã mất kết nối.`); const c = document.getElementById(`player-card-${data.playerId}`); if (c) { c.querySelector('h3').textContent = data.newName; c.classList.add('disconnected'); } });
 
 // --- VII. Functions Called by Inline JS ---
+// Các hàm này giờ có thể "thấy" được hàm playSound
 function sendPlayerChoice(choice) { playSound('click.mp3'); gameElements.actionControls.innerHTML = '<p class="info">Đã gửi lựa chọn! Đang chờ...</p>'; socket.emit('playerChoice', { roomCode: state.currentRoomCode, choice }); }
 function showTargetSelection(actionType) { playSound('click.mp3'); let t = actionType === 'challenge' ? 'Thách Đấu Ai?' : 'Ghép Đội Với Ai?'; let c = '<div class="player-selection-grid">'; state.players.forEach(p => { if (p.id !== state.myId && !p.disconnected) c += `<button onclick="requestChaosAction('${p.id}', '${actionType}')">${p.name}</button>`; }); c += '</div>'; createModal(t, c); }
 function requestChaosAction(targetId, actionType) { playSound('click.mp3'); if (actionType === 'challenge') { let g = `<p>Bạn thách đấu <strong>${state.players.find(p=>p.id===targetId).name}</strong>. Đoán:</p><button class="choice-buttons loyal" onclick="submitChallengeGuess('${targetId}', 'Cống Hiến')">Cống Hiến</button><button class="choice-buttons corrupt" onclick="submitChallengeGuess('${targetId}', 'Tham Nhũng')">Tham Nhũng</button><button class="choice-buttons blank" onclick="submitChallengeGuess('${targetId}', 'Phiếu Trống')">Phiếu Trống</button>`; createModal("Đưa Ra Phán Đoán", g); } else { socket.emit('requestChaosAction', { roomCode: state.currentRoomCode, targetId, actionType }); closeModal(); } }

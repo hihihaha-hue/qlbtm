@@ -1,5 +1,5 @@
 //======================================================================
-// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (TƯƠNG THÍCH HOÀN TOÀN VỚI HOSTING)
+// QUYỀN LỰC BÓNG TỐI - SERVER LOGIC (FIX LỖI BOT BỎ PHIẾU)
 //======================================================================
 
 const express = require('express');
@@ -9,26 +9,13 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-// [SỬA LỖI QUAN TRỌNG NHẤT] - Cấu hình Socket.IO cho môi trường hosting
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Cho phép kết nối từ bất kỳ đâu
-    methods: ["GET", "POST"]
-  }
-});
-
-// Cấu hình phục vụ file tĩnh
 app.use(express.static(path.join(__dirname)));
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// Biến toàn cục để lưu trữ trạng thái các phòng chơi
 const rooms = {};
 
-// ... TOÀN BỘ LOGIC GAME VÀ SẮC LỆNH CỦA BẠN NẰM Ở ĐÂY ...
-// (Phần logic còn lại giống hệt phiên bản trước, không cần thay đổi)
 const CHOICE_DURATION = 30; const CHAOS_DURATION = 30; const DECREE_REVEAL_DELAY = 5000; const WIN_SCORE = 15; const LOSE_SCORE = -15;
 const DECREES = { "NHAN_DOI": { name: "Ngày Nhân Đôi", description: "Tất cả điểm cộng và trừ trong vòng này sẽ được nhân đôi!", getPointMultiplier: () => 2 }, "GIO_GIOI_NGHIEM": { name: "Giờ Giới Nghiêm", description: "Vòng này cấm mọi hành vi Thách Đấu và Ghép Đội.", isChaosDisabled: true }, "DAO_NGUOC": { name: "Ngày Phán Xét Đảo Ngược", description: "Phe có NHIỀU phiếu hơn sẽ là phe chiến thắng!", determineWinner: (c, t) => (c === t ? null : (c > t ? 'Cống Hiến' : 'Tham Nhũng')) }, "THUE_THAN": { name: "Thuế Thân", description: "Cuối vòng, người có điểm cao nhất bị -2, người thấp nhất được +2.", endOfRoundEffect: (gs, results, pointMultiplier) => { const highestPlayers = getPlayersByScore(gs.players, 'highest'); const lowestPlayers = getPlayersByScore(gs.players, 'lowest'); if (highestPlayers.length > 0 && lowestPlayers.length > 0 && highestPlayers[0].id !== lowestPlayers[0].id) { const tax = 2 * pointMultiplier * highestPlayers.length; highestPlayers.forEach(p => p.score -= (2 * pointMultiplier)); lowestPlayers.forEach(p => p.score += tax / lowestPlayers.length); results.messages.push(`📜 **Thuế Thân** được áp dụng! ${tax} điểm đã được chuyển giao.`); } } }, "LOI_THI_THAM_CUA_QUY": { name: "Lời Thì Thầm Của Quỷ", description: "Hoán đổi lựa chọn của mọi người theo vòng tròn.", isChaosDisabled: true, onReveal: (gs, io, roomCode) => { const active = gs.players.filter(p => !p.isDefeated && p.chosenAction); if (active.length < 2) return; const choices = active.map(p => p.chosenAction); for (let i = 0; i < active.length; i++) { active[i].chosenAction = choices[(i === 0) ? active.length - 1 : i - 1]; } io.to(roomCode).emit('actionsSwapped', { message: "😈 Lựa chọn của mọi người đã bị hoán đổi!" }); } }, "AMNESIA_DAY": { name: "Ngày Mất Trí", description: "Người thấp điểm nhất hoán đổi lựa chọn của 2 người.", onReveal: (gs, io, roomCode, drawerId) => { gs.phase = 'special_action'; const drawer = gs.players.find(p => p.id === drawerId); io.to(drawerId).emit('promptAmnesiaAction', { players: gs.players.map(p => ({ id: p.id, name: p.name })) }); io.to(roomCode).except(drawerId).emit('logMessage', { type: 'warning', message: `🧠 Đang chờ ${drawer.name} thực hiện quyền năng...`}); } }, };
 const DECREE_IDS = Object.keys(DECREES);
@@ -44,10 +31,68 @@ function handlePlayerChoice(roomCode, playerId, choice) { const gs = rooms[roomC
 function handleChaosAction(roomCode, initiatorId, targetId, actionType, guess = null) { const gs = rooms[roomCode]?.gameState; if (!gs || gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return; const i = gs.players.find(p => p.id === initiatorId), t = gs.players.find(p => p.id === targetId); if (!i || !t) return; let msg = ""; const multi = gs.roundData.decree?.getPointMultiplier?.() || 1; if (actionType === 'challenge') { const success = guess === t.chosenAction; msg = `🔥 **${i.name}** đã Thách Đấu **${t.name}** và ${success ? "đoán **ĐÚNG**" : "đoán **SAI**"}!`; const change = 2 * multi; if (success) { i.score += change; t.score -= change; } else { i.score -= change; t.score += change; } } else if (actionType === 'teamup') { const success = i.chosenAction === t.chosenAction; msg = `🤝 **${i.name}** đã Ghép Đội với **${t.name}** và ${success ? "**thành công**" : "**thất bại**"}!`; if (success) gs.roundData.chaosResult = { actionType, success, actionToReduce: i.chosenAction }; else i.score -= multi; } endChaosPhase(roomCode, msg); }
 function triggerRandomEvent(roomCode) { const gs = rooms[roomCode]?.gameState; if (!gs || Math.random() > 0.20) return; const events = ['avenger', 'treasury_empty']; const randomEvent = events[Math.floor(Math.random() * events.length)]; let message = ""; if (randomEvent === 'avenger') { let maxLoser = null; let maxLoss = 0; for (const id in gs.roundData.lastScoreChanges) { if (gs.roundData.lastScoreChanges[id] < maxLoss) { maxLoss = gs.roundData.lastScoreChanges[id]; maxLoser = gs.players.find(p => p.id === id); } } if (maxLoser) { maxLoser.score += 2; message = `⚔️ **Thích Khách Báo Thù!** ${maxLoser.name} bị trừ nhiều điểm nhất và được ban thưởng 2 điểm an ủi!`; } } else if (randomEvent === 'treasury_empty') { gs.players.forEach(p => p.score--); message = `📉 **Ngân Khố Rỗng Tuếch!** Do khủng hoảng, tất cả người chơi bị trừ 1 điểm!`; } if (message) { io.to(roomCode).emit('logMessage', { type: 'warning', message }); io.to(roomCode).emit('updateScores', gs.players.map(p => ({ id: p.id, score: p.score }))); } }
 function triggerBotChoices(roomCode) { rooms[roomCode]?.gameState?.players.forEach(p => { if (p.isBot && !p.isDefeated) setTimeout(() => { if (!p.chosenAction) { let choice; switch(p.personality) { case 'aggressive': choice = Math.random() < 0.7 ? 'Tham Nhũng' : 'Cống Hiến'; break; case 'cautious': choice = Math.random() < 0.75 ? 'Cống Hiến' : 'Phiếu Trống'; break; default: choice = ['Cống Hiến', 'Tham Nhũng', 'Phiếu Trống'][Math.floor(Math.random() * 3)]; } handlePlayerChoice(roomCode, p.id, choice); } }, Math.random() * 2000 + 1500); }); }
-function triggerBotChaosAction(roomCode) { const gs = rooms[roomCode]?.gameState; if (!gs) return; const bots = gs.players.filter(p => p.isBot && !p.isDefeated); const targets = gs.players.filter(p => !p.isDefeated); if (bots.length === 0 || targets.length < 2) return; bots.forEach(bot => { setTimeout(() => { if (gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return; const candidates = targets.filter(p => p.id !== bot.id); if (candidates.length === 0) return; const target = candidates[Math.floor(Math.random() * candidates.length)]; const actionProbability = bot.personality === 'aggressive' ? 0.6 : (bot.personality === 'cautious' ? 0.3 : 0.4); if (Math.random() < actionProbability) { const actionType = (bot.personality === 'cautious' && Math.random() < 0.8) ? 'teamup' : 'challenge'; if (actionType === 'challenge') { const guess = ['Cống Hiến', 'Tham Nhũng', 'Phiếu Trống'][Math.floor(Math.random() * 3)]; handleChaosAction(roomCode, bot.id, target.id, 'challenge', guess); } else { handleChaosAction(roomCode, bot.id, target.id, 'teamup'); } } else if (Math.random() < 0.5) { socket.emit('playerVotedToSkip', roomCode, bot.id); } }, Math.random() * 10000 + 5000); }); }
-io.on('connection', (socket) => { socket.on('createRoom', data => { let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (rooms[code]); rooms[code] = { players: [], hostId: socket.id, maxPlayers: 12, gameState: null }; handleJoinRoom(code, data.name); }); socket.on('joinRoom', data => handleJoinRoom(data.roomCode?.trim().toUpperCase(), data.name)); function handleJoinRoom(code, name) { const room = rooms[code]; if (!room) return socket.emit('roomError', `Phòng '${code}' không tồn tại!`); if (room.gameState) return socket.emit('roomError', 'Trò chơi đã bắt đầu!'); if (room.players.length >= room.maxPlayers) return socket.emit('roomError', 'Phòng đã đầy!'); const p = { id: socket.id, name: (name || `Người chơi ${room.players.length + 1}`).substring(0, 15).trim(), isBot: false }; room.players.push(p); socket.join(code); io.to(code).emit('updatePlayerList', room.players, room.hostId); socket.emit('joinedRoom', { roomCode: code, hostId: room.hostId, myId: socket.id, players: room.players }); } socket.on('addBot', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length < r.maxPlayers) { const personalities = ['aggressive', 'cautious', 'random']; const p = { id: `bot-${Date.now()}`, name: `Bot ${r.players.length + 1}`, isBot: true, personality: personalities[Math.floor(Math.random() * personalities.length)] }; r.players.push(p); io.to(code).emit('updatePlayerList', r.players, r.hostId); } }); socket.on('kickPlayer', (data) => { const room = rooms[data.roomCode]; if (room && socket.id === room.hostId) { const targetSocket = io.sockets.sockets.get(data.playerId); if (targetSocket) { targetSocket.emit('kicked'); targetSocket.leave(data.roomCode); } room.players = room.players.filter(p => p.id !== data.playerId); io.to(data.roomCode).emit('updatePlayerList', room.players, room.hostId); } }); socket.on('changeName', data => { const p = rooms[data.roomCode]?.players.find(p => p.id === socket.id); if (p) { p.name = data.newName.substring(0, 15).trim() || p.name; io.to(data.roomCode).emit('updatePlayerList', rooms[data.roomCode].players, rooms[data.roomCode].hostId); } }); socket.on('startGame', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length >= 2) { r.gameState = createGameState(r.players); io.to(code).emit('gameStarted'); startNewRound(code); } }); socket.on('playerChoice', data => handlePlayerChoice(data.roomCode, socket.id, data.choice)); socket.on('requestChaosAction', data => handleChaosAction(data.roomCode, socket.id, data.targetId, data.actionType, data.guess)); socket.on('playerVotedToSkip', (roomCode, botId = null) => { const gs = rooms[roomCode]?.gameState; if (!gs || gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return; const voterId = botId || socket.id; gs.roundData.votesToSkip.add(voterId); const totalPlayers = gs.players.filter(p => !p.disconnected).length; io.to(roomCode).emit('updateSkipVoteCount', gs.roundData.votesToSkip.size, totalPlayers); if (gs.roundData.votesToSkip.size >= totalPlayers) { endChaosPhase(roomCode, "Tất cả người chơi đã đồng ý bỏ qua giai đoạn này."); } }); socket.on('amnesiaAction', data => { const gs = rooms[data.roomCode]?.gameState; if (!gs || gs.phase !== 'special_action') return; const p1 = gs.players.find(p => p.id === data.player1Id), p2 = gs.players.find(p => p.id === data.player2Id); if (p1 && p2) { [p1.chosenAction, p2.chosenAction] = [p2.chosenAction, p1.chosenAction]; io.to(data.roomCode).emit('logMessage', { type: 'warning', message: `🧠 Lựa chọn của **${p1.name}** và **${p2.name}** đã bị hoán đổi!` }); } startChaosPhase(data.roomCode); }); socket.on('nextRound', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.gameState.phase !== 'gameover') startNewRound(code); }); socket.on('playAgain', (roomCode) => { const room = rooms[roomCode]; if (room && socket.id === room.hostId && room.gameState.phase === 'gameover') { room.gameState = createGameState(room.players); io.to(roomCode).emit('gameStarted'); startNewRound(roomCode); } }); socket.on('disconnect', () => { for (const code in rooms) { const r = rooms[code]; const i = r.players.findIndex(p => p.id === socket.id); if (i !== -1) { if (r.gameState) { const p = r.gameState.players.find(p => p.id === socket.id); if (p) { p.disconnected = true; p.name = `${p.name} (Rời trận)`; io.to(code).emit('playerDisconnected', { playerId: socket.id, newName: p.name }); } } else r.players.splice(i, 1); if (r.players.filter(p => !p.isBot).length === 0) { delete rooms[code]; break; } if (socket.id === r.hostId && r.players.length > 0) { r.hostId = (r.players.find(p => !p.isBot) || r.players[0]).id; } io.to(code).emit('updatePlayerList', r.players, r.hostId); break; } } }); });
+// [SỬA LỖI Ở ĐÂY] - Hàm này đã được sửa lại
+function triggerBotChaosAction(roomCode) {
+    const gs = rooms[roomCode]?.gameState; if (!gs) return;
+    const bots = gs.players.filter(p => p.isBot && !p.isDefeated);
+    const targets = gs.players.filter(p => !p.isDefeated);
+    if (bots.length === 0 || targets.length < 2) return;
+    
+    bots.forEach(bot => {
+        setTimeout(() => {
+            if (gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return;
+            const candidates = targets.filter(p => p.id !== bot.id);
+            if (candidates.length === 0) return;
+            
+            const target = candidates[Math.floor(Math.random() * candidates.length)];
+            const actionProbability = bot.personality === 'aggressive' ? 0.6 : (bot.personality === 'cautious' ? 0.3 : 0.4);
+            
+            if (Math.random() < actionProbability) {
+                const actionType = (bot.personality === 'cautious' && Math.random() < 0.8) ? 'teamup' : 'challenge';
+                if (actionType === 'challenge') {
+                    const guess = ['Cống Hiến', 'Tham Nhũng', 'Phiếu Trống'][Math.floor(Math.random() * 3)];
+                    handleChaosAction(roomCode, bot.id, target.id, 'challenge', guess);
+                } else {
+                    handleChaosAction(roomCode, bot.id, target.id, 'teamup');
+                }
+            } else if (Math.random() < 0.5) {
+                // Bot sẽ gọi trực tiếp vào logic bỏ phiếu thay vì dùng socket
+                handlePlayerVotedToSkip(roomCode, bot.id);
+            }
+        }, Math.random() * 10000 + 5000);
+    });
+}
+// [SỬA LỖI Ở ĐÂY] - Tách logic bỏ phiếu ra một hàm riêng
+function handlePlayerVotedToSkip(roomCode, voterId) {
+    const gs = rooms[roomCode]?.gameState;
+    if (!gs || gs.phase !== 'chaos' || gs.roundData.chaosActionTaken) return;
 
-// Khởi động server
+    gs.roundData.votesToSkip.add(voterId);
+    const totalPlayers = gs.players.filter(p => !p.disconnected).length;
+    io.to(roomCode).emit('updateSkipVoteCount', gs.roundData.votesToSkip.size, totalPlayers);
+    if (gs.roundData.votesToSkip.size >= totalPlayers) {
+        endChaosPhase(roomCode, "Tất cả người chơi đã đồng ý bỏ qua giai đoạn này.");
+    }
+}
+io.on('connection', (socket) => {
+    socket.on('createRoom', data => { let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (rooms[code]); rooms[code] = { players: [], hostId: socket.id, maxPlayers: 12, gameState: null }; handleJoinRoom(code, data.name); });
+    socket.on('joinRoom', data => handleJoinRoom(data.roomCode?.trim().toUpperCase(), data.name));
+    function handleJoinRoom(code, name) { const room = rooms[code]; if (!room) return socket.emit('roomError', `Phòng '${code}' không tồn tại!`); if (room.gameState) return socket.emit('roomError', 'Trò chơi đã bắt đầu!'); if (room.players.length >= room.maxPlayers) return socket.emit('roomError', 'Phòng đã đầy!'); const p = { id: socket.id, name: (name || `Người chơi ${room.players.length + 1}`).substring(0, 15).trim(), isBot: false }; room.players.push(p); socket.join(code); io.to(code).emit('updatePlayerList', room.players, room.hostId); socket.emit('joinedRoom', { roomCode: code, hostId: room.hostId, myId: socket.id, players: room.players }); }
+    socket.on('addBot', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length < r.maxPlayers) { const personalities = ['aggressive', 'cautious', 'random']; const p = { id: `bot-${Date.now()}`, name: `Bot ${r.players.length + 1}`, isBot: true, personality: personalities[Math.floor(Math.random() * personalities.length)] }; r.players.push(p); io.to(code).emit('updatePlayerList', r.players, r.hostId); } });
+    socket.on('kickPlayer', (data) => { const room = rooms[data.roomCode]; if (room && socket.id === room.hostId) { const targetSocket = io.sockets.sockets.get(data.playerId); if (targetSocket) { targetSocket.emit('kicked'); targetSocket.leave(data.roomCode); } room.players = room.players.filter(p => p.id !== data.playerId); io.to(data.roomCode).emit('updatePlayerList', room.players, room.hostId); } });
+    socket.on('changeName', data => { const p = rooms[data.roomCode]?.players.find(p => p.id === socket.id); if (p) { p.name = data.newName.substring(0, 15).trim() || p.name; io.to(data.roomCode).emit('updatePlayerList', rooms[data.roomCode].players, rooms[data.roomCode].hostId); } });
+    socket.on('startGame', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.players.length >= 2) { r.gameState = createGameState(r.players); io.to(code).emit('gameStarted'); startNewRound(code); } });
+    socket.on('playerChoice', data => handlePlayerChoice(data.roomCode, socket.id, data.choice));
+    socket.on('requestChaosAction', data => handleChaosAction(data.roomCode, socket.id, data.targetId, data.actionType, data.guess));
+    socket.on('playerVotedToSkip', (roomCode) => {
+        handlePlayerVotedToSkip(roomCode, socket.id); // Người chơi thực gọi hàm này
+    });
+    socket.on('amnesiaAction', data => { const gs = rooms[data.roomCode]?.gameState; if (!gs || gs.phase !== 'special_action') return; const p1 = gs.players.find(p => p.id === data.player1Id), p2 = gs.players.find(p => p.id === data.player2Id); if (p1 && p2) { [p1.chosenAction, p2.chosenAction] = [p2.chosenAction, p1.chosenAction]; io.to(data.roomCode).emit('logMessage', { type: 'warning', message: `🧠 Lựa chọn của **${p1.name}** và **${p2.name}** đã bị hoán đổi!` }); } startChaosPhase(data.roomCode); });
+    socket.on('nextRound', code => { const r = rooms[code]; if (r && socket.id === r.hostId && r.gameState.phase !== 'gameover') startNewRound(code); });
+    socket.on('playAgain', (roomCode) => { const room = rooms[roomCode]; if (room && socket.id === room.hostId && room.gameState.phase === 'gameover') { room.gameState = createGameState(room.players); io.to(roomCode).emit('gameStarted'); startNewRound(roomCode); } });
+    socket.on('disconnect', () => { for (const code in rooms) { const r = rooms[code]; const i = r.players.findIndex(p => p.id === socket.id); if (i !== -1) { if (r.gameState) { const p = r.gameState.players.find(p => p.id === socket.id); if (p) { p.disconnected = true; p.name = `${p.name} (Rời trận)`; io.to(code).emit('playerDisconnected', { playerId: socket.id, newName: p.name }); } } else r.players.splice(i, 1); if (r.players.filter(p => !p.isBot).length === 0) { delete rooms[code]; break; } if (socket.id === r.hostId && r.players.length > 0) { r.hostId = (r.players.find(p => !p.isBot) || r.players[0]).id; } io.to(code).emit('updatePlayerList', r.players, r.hostId); break; } } });
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`[SERVER] Máy chủ đang lắng nghe trên cổng ${PORT}`);
